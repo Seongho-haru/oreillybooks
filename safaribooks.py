@@ -35,6 +35,38 @@ PROFILE_URL = SAFARI_BASE_URL + "/profile/"
 USE_PROXY = False
 PROXIES = {"https": "https://127.0.0.1:8080"}
 
+# 폰트 확장자들
+FONT_EXTS = (".woff2", ".woff", ".ttf", ".otf", ".eot", ".svg")
+
+def rewrite_css_font_urls(css_text: str, css_url: str) -> str:
+    """
+    CSS의 @font-face 블록 안 url(...)들을 로컬 Fonts 디렉토리로 바꾼다.
+    - css_url: 이 CSS의 원래 URL(상대경로 절대화에 사용)
+    - 결과: url(../Fonts/<basename>)
+    """
+    # @font-face 블록만 골라서 그 안에서만 url(...) 치환
+    font_block_pat = re.compile(r"@font-face\s*{[^}]*}", re.IGNORECASE | re.DOTALL)
+    url_pat = re.compile(r"url\(\s*['\"]?([^)'\"]+)['\"]?\s*\)", re.IGNORECASE)
+
+    def _rebase_block(block: str) -> str:
+        def _repl(m):
+            raw = m.group(1).strip()
+            # data:, file: 등은 그대로 두기
+            if raw.startswith(("data:", "file:")):
+                return m.group(0)
+
+            abs_u = urljoin(css_url, raw)
+            name = os.path.basename(urlparse(abs_u).path)
+            # 폰트 확장자 아니면 그대로 두기(이미지 등)
+            if not any(name.lower().endswith(ext) for ext in FONT_EXTS):
+                return m.group(0)
+
+            return f"url(../Fonts/{name})"
+
+        return url_pat.sub(_repl, block)
+
+    return font_block_pat.sub(lambda mm: _rebase_block(mm.group(0)), css_text)
+
 
 class Display:
     BASE_FORMAT = logging.Formatter(
@@ -54,7 +86,7 @@ class Display:
 
         self.logger = logging.getLogger("SafariBooks")
         self.logger.setLevel(logging.INFO)
-        logs_handler = logging.FileHandler(filename=self.log_file)
+        logs_handler = logging.FileHandler(filename=self.log_file,encoding="utf-8", errors="replace")
         logs_handler.setFormatter(self.BASE_FORMAT)
         logs_handler.setLevel(logging.INFO)
         self.logger.addHandler(logs_handler)
@@ -65,6 +97,7 @@ class Display:
 
         self.book_ad_info = False
         self.css_ad_info = Value("i", 0)
+        self.font_ad_info = Value("i", 0)
         self.images_ad_info = Value("i", 0)
         self.last_request = (None,)
         self.in_error = False
@@ -366,6 +399,7 @@ class SafariBooks:
         self.BOOK_PATH = os.path.join(books_dir, self.clean_book_title)
         self.display.set_output_dir(self.BOOK_PATH)
         self.css_path = ""
+        self.font_path = ""
         self.images_path = ""
         self.create_dirs()
 
@@ -373,6 +407,7 @@ class SafariBooks:
         self.filename = ""
         self.chapter_stylesheets = []
         self.css = []
+        self.font = []
         self.images = []
 
         self.display.info("Downloading book contents... (%s chapters)" % len(self.book_chapters), state=True)
@@ -397,6 +432,9 @@ class SafariBooks:
         self.css_done_queue = Queue(0) if "win" not in sys.platform else WinQueue()
         self.display.info("Downloading book CSSs... (%s files)" % len(self.css), state=True)
         self.collect_css()
+        self.font_done_queue = Queue(0) if "win" not in sys.platform else WinQueue()
+        self.display.info("Downloading book Fonts... (%s files)" % len(self.font), state=True)
+        self.collect_fonts()
         self.images_done_queue = Queue(0) if "win" not in sys.platform else WinQueue()
         self.display.info("Downloading book images... (%s files)" % len(self.images), state=True)
         self.collect_images()
@@ -695,7 +733,11 @@ class SafariBooks:
                     del css.attrib["data-template"]
 
                 try:
-                    page_css += html.tostring(css, method="xml", encoding='unicode') + "\n"
+                    # 기존: page_css += html.tostring(css, method="xml", encoding='unicode') + "\n"
+                    # 변경: 내용만 꺼내서 재배치 후 다시 <style>로 감싸기
+                    inline_css_text = css.text or ""
+                    inline_rebased = rewrite_css_font_urls(inline_css_text, self.base_url)
+                    page_css += "<style>" + inline_rebased + "</style>\n"
 
                 except (html.etree.ParseError, html.etree.ParserError) as parsing_error:
                     self.display.error(parsing_error)
@@ -750,6 +792,22 @@ class SafariBooks:
 
         return page_css, xhtml
 
+    def parse_css(self, css_content, css_url):
+        # CSS 파일 중 @font-face 내용에서 url만 파싱
+        font_face_pattern = r"@font-face\s*{[^}]*}"
+        font_faces = re.findall(font_face_pattern, css_content, re.DOTALL)
+        for font_face in font_faces:
+            # url("...") 또는 url('...') 또는 url(...) 지원, 따옴표 제거
+            url_pattern = r"url\s*\(\s*['\"]?([^)'\"]+)['\"]?\s*\)"
+            urls = re.findall(url_pattern, font_face)
+            for url in urls:
+                # 상대 URL을 CSS URL 기반으로 절대 URL로 변환
+                absolute_url = urljoin(css_url, url)
+                # 중복 방지
+                if absolute_url not in self.font:
+                    self.font.append(absolute_url)
+                    self.display.log("Crawler: found a new font URL at %s" % absolute_url)
+
     @staticmethod
     def escape_dirname(dirname, clean_space=False):
         if ":" in dirname:
@@ -784,6 +842,14 @@ class SafariBooks:
         else:
             os.makedirs(self.css_path)
             self.display.css_ad_info.value = 1
+
+        self.font_path = os.path.join(oebps, "Fonts")
+        if os.path.isdir(self.font_path):
+            self.display.log("Fonts directory already exists: %s" % self.font_path)
+
+        else:
+            os.makedirs(self.font_path)
+            self.display.font_ad_info.value = 1
 
         self.images_path = os.path.join(oebps, "Images")
         if os.path.isdir(self.images_path):
@@ -857,21 +923,57 @@ class SafariBooks:
                 self.display.info(("File `%s` already exists.\n"
                                    "    If you want to download again all the CSSs,\n"
                                    "    please delete the output directory '" + self.BOOK_PATH + "'"
-                                   " and restart the program.") %
-                                  css_file)
+                                   " and restart the program.") % css_file)
                 self.display.css_ad_info.value = 1
-
         else:
-            response = self.requests_provider(url)
-            if response == 0:
+            resp = self.requests_provider(url)
+            if resp == 0:
                 self.display.error("Error trying to retrieve this CSS: %s\n    From: %s" % (css_file, url))
+            # 1) 디코딩
+            try:
+                css_text = resp.content.decode("utf-8")
+            except UnicodeDecodeError:
+                css_text = resp.content.decode("latin-1")
 
-            with open(css_file, 'wb') as s:
-                s.write(response.content)
+            # 2) 폰트 URL 수집(절대화)
+            self.parse_css(css_text, url)
+
+            # 3) @font-face 안의 url(...)을 ../Fonts/<파일명>으로 재배치
+            rebased = rewrite_css_font_urls(css_text, url)
+
+            # 4) 저장
+            with open(css_file, "w", encoding="utf-8") as s:
+                s.write(rebased)
 
         self.css_done_queue.put(1)
         self.display.state(len(self.css), self.css_done_queue.qsize())
 
+    def _thread_download_font(self, url):
+        # URL이 이미 절대 경로이므로 그대로 사용
+        parsed_url = urlparse(url)
+        font_name = parsed_url.path.split("/")[-1]
+        font_path = os.path.join(self.font_path, font_name)
+        if os.path.isfile(font_path):
+            if not self.display.font_ad_info.value and url not in self.font[:self.font.index(url)]:
+                self.display.info(("File `%s` already exists.\n"
+                                   "    If you want to download again all the fonts,\n"
+                                   "    please delete the output directory '" + self.BOOK_PATH + "'"
+                                   " and restart the program.") %
+                                  font_name)
+                self.display.font_ad_info.value = 1
+
+        else:
+            response = self.requests_provider(url, stream=True)
+            if response == 0:
+                self.display.error("Error trying to retrieve this font: %s\n    From: %s" % (font_name, url))
+                return
+
+            with open(font_path, 'wb') as font:
+                for chunk in response.iter_content(1024):
+                    font.write(chunk)
+
+        self.font_done_queue.put(1)
+        self.display.state(len(self.font), self.font_done_queue.qsize())
 
     def _thread_download_images(self, url):
         image_name = url.split("/")[-1]
@@ -918,6 +1020,13 @@ class SafariBooks:
         for css_url in self.css:
             self._thread_download_css(css_url)
 
+    def collect_fonts(self):
+        self.display.state_status.value = -1
+
+        # "self._start_multiprocessing" seems to cause problem. Switching to mono-thread download.
+        for font_url in self.font:
+            self._thread_download_font(font_url)
+
     def collect_images(self):
         if self.display.book_ad_info == 2:
             self.display.info("Some of the book contents were already downloaded.\n"
@@ -933,6 +1042,7 @@ class SafariBooks:
 
     def create_content_opf(self):
         self.css = next(os.walk(self.css_path))[2]
+        self.font = next(os.walk(self.font_path))[2]  # 폰트 파일 목록 업데이트
         self.images = next(os.walk(self.images_path))[2]
 
         manifest = []
@@ -956,6 +1066,24 @@ class SafariBooks:
         for i in range(len(self.css)):
             manifest.append("<item id=\"style_{0:0>2}\" href=\"Styles/Style{0:0>2}.css\" "
                             "media-type=\"text/css\" />".format(i))
+
+        # 폰트 manifest 추가
+        for f in set(self.font):
+            dot_split = f.split(".")
+            head = "font_" + escape("".join(dot_split[:-1]))
+            extension = dot_split[-1].lower()
+            media_type = ""
+            if extension in ["ttf", "otf"]:
+                media_type = "font/ttf" if extension == "ttf" else "font/otf"
+            elif extension == "woff":
+                media_type = "font/woff"
+            elif extension == "woff2":
+                media_type = "font/woff2"
+            else:
+                media_type = "application/octet-stream"  # 알려지지 않은 경우
+            manifest.append("<item id=\"{0}\" href=\"Fonts/{1}\" media-type=\"{2}\" />".format(
+                head, f, media_type
+            ))
 
         authors = "\n".join("<dc:creator opf:file-as=\"{0}\" opf:role=\"aut\">{0}</dc:creator>".format(
             escape(aut.get("name", "n/d"))
