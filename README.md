@@ -19,10 +19,10 @@
 
 ## 개요(Overview)
 
-- [요구사항 & 설정](#요구사항 & 설정)
+- [요구사항 & 설정](https://github.com/Seongho-haru/oreillybooks?tab=readme-ov-file#%EC%9A%94%EA%B5%AC%EC%82%AC%ED%95%AD--%EC%84%A4%EC%A0%95)
 - [사용법](#사용법)
 - [Single Sign-On (SSO), 기업/대학 로그인](https://github.com/lorenzodifuccia/safaribooks/issues/150#issuecomment-555423085)
-- [PDF -> EPUB 변환](#EPUB → 벡터 PDF 변환기)
+- [PDF -> EPUB 변환](https://github.com/Seongho-haru/oreillybooks?tab=readme-ov-file#epub--%EB%B2%A1%ED%84%B0-pdf-%EB%B3%80%ED%99%98%EA%B8%B0)
 
 ## 요구사항 & 설정
 
@@ -194,6 +194,7 @@ python epub2pdf.py mybook.epub --split
 ## 원본(Fork)
 
 [원본 Fork](https://github.com/lorenzodifuccia/safaribooks)
+
 
 
 
