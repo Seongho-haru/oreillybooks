@@ -19,14 +19,14 @@
 
 ## 개요(Overview)
 
-- [요구사항 & 설정](#requirements--setup)
-- [사용법](#usage)
+- [요구사항 & 설정](#요구사항 & 설정)
+- [사용법](#사용법)
 - [Single Sign-On (SSO), 기업/대학 로그인](https://github.com/lorenzodifuccia/safaribooks/issues/150#issuecomment-555423085)
 - [Calibre EPUB 변환](https://github.com/lorenzodifuccia/safaribooks#calibre-epub-conversion)
 - [예시: _Test-Driven Development with Python, 2nd Edition_ 다운로드](#download-test-driven-development-with-python-2nd-edition)
 - [예시: `--kindle` 옵션 사용 여부](#use-or-not-the---kindle-option)
 
-## Requirements & Setup
+## 요구사항 & 설정
 
 먼저 `python3`와 `pip3`가 설치되어 있어야 합니다.
 
@@ -196,4 +196,5 @@ python epub2pdf.py mybook.epub --split
 ## 원본(Fork)
 
 [원본 Fork](https://github.com/lorenzodifuccia/safaribooks)
+
 
