@@ -1,3 +1,6 @@
-lxml>=4.1.1
-requests>=2.20.0
-
+lxml>=4.1.1          # HTML/XML 파싱
+requests>=2.20.0     # HTTP 요청
+beautifulsoup4>=4.9  # HTML 파싱 (선택적으로 lxml 파서와 함께 사용)
+pypdf>=3.0.0         # PDF 읽기/쓰기
+playwright>=1.30.0   # 브라우저 자동화
+tqdm>=4.60.0         # 진행률 표시
