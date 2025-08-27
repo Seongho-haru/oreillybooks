@@ -4,8 +4,11 @@
 이 프로그램의 사용에 대한 책임은 사용자에게 있으며, 본 도구는 *개인적*이고 _교육적_ 목적에 한합니다.
 사용 전에 반드시 *O'Reilly*의 [이용 약관](https://learning.oreilly.com/terms/)을 읽어주세요.
 
-## _확인 필요_
+## 추가 기능
+1. Epub -> PDF 스크립트추가
+2. Font 다운로드 로직추가
 
+## _확인 필요_
 - [lorenzodifuccia/safaribooks](https://github.com/lorenzodifuccia/safaribooks.git)을 통해서 수정하였습니다.
 - ORLY API 변경으로 인해 `safaribooks`를 통한 *로그인*이 더 이상 동작하지 않습니다.
 - 새 기능 추가와 신규 API 통합을 위해 대대적인 리팩터링이 필요합니다.
@@ -193,3 +196,4 @@ python epub2pdf.py mybook.epub --split
 ## 원본(Fork)
 
 [원본 Fork](https://github.com/lorenzodifuccia/safaribooks)
+
